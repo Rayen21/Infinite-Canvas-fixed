@@ -7,7 +7,6 @@ Supports comfyui/API calls/modelscope calls
 
 https://apimart.ai/register?aff=1uyAbb
 
-【折扣码（daxiong）首次充值9折，可开发票。】
 
 
 5/13日更新：
@@ -31,6 +30,11 @@ https://apimart.ai/register?aff=1uyAbb
 2. 增加协议的验证按键，可以方便的验证自己的API平台是什么协议
 3. 修复了LLM节点的一些bug
 4. 上传了精简版的python，运行“安装依赖.bat”，完成之后，运行"run.bat"
+
+5/18日更新：
+1. 修复了视频生成bug
+2. 增加了画笔编辑
+3. 修复了ccomfyui的并发bug
    
 -----
 
@@ -80,6 +84,15 @@ Usage: Use Gemini to generate 10 selling point prompt words for a product. Use t
 3. Fixed some bugs in the LLM node.
 
 4. Uploaded a simplified version of Python. Run "安装依赖.bat", and then run "run.bat".
+   
+
+May 18th Update:
+
+1. Fixed a video generation bug.
+
+2. Added brush editing.
+
+3. Fixed a concurrency bug in ccomfyui.
 
 
 
