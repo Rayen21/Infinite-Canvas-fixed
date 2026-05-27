@@ -2718,8 +2718,23 @@ function tempShUploadedUrlForNode(node, url){
     const match = (node?.tempShLinks || []).find(item => item?.source === url && item?.url);
     return match?.url || url;
 }
+function applyUploadedUrlToRefs(refs, node){
+    return (refs || []).map(ref => {
+        if(!ref?.url) return ref;
+        const url = tempShUploadedUrlForNode(node, ref.url);
+        return url && url !== ref.url ? {...ref, url, originalLocalUrl:ref.originalLocalUrl || ref.url} : ref;
+    });
+}
 function manualVideoUrlForNode(node){
     return (node?.manualVideoUrls || []).find(Boolean) || '';
+}
+function currentCanvasMediaLinks(node){
+    const refs = orderedSources(node, generatorSources(node)).flatMap(src => src.refs || [])
+        .filter(ref => ref?.url && ['image','video'].includes(mediaKindForRef(ref)));
+    return refs.map(ref => {
+        const uploaded = tempShUploadedUrlForNode(node, ref.url);
+        return uploaded && uploaded !== ref.url ? uploaded : '';
+    }).filter(Boolean);
 }
 function clearManualVideoUrlForNode(node){
     if(!node) return;
@@ -2730,10 +2745,11 @@ function applyTempShUrlToCanvasRef(ref, uploadedUrl){
     if(!ref?.url || !uploadedUrl) return false;
     const source = nodes.find(n => n.id === ref.nodeId);
     if(!source) return false;
+    const kind = mediaKindForRef(ref);
     if(source.type === 'image' && source.url === ref.url){
         source.originalLocalUrl = source.originalLocalUrl || source.url;
         source.url = uploadedUrl;
-        source.mediaKind = 'video';
+        source.mediaKind = kind;
         return true;
     }
     if(source.type === 'output' && Array.isArray(source.images)){
@@ -2743,7 +2759,7 @@ function applyTempShUrlToCanvasRef(ref, uploadedUrl){
         if(item && typeof item === 'object'){
             item.originalLocalUrl = item.originalLocalUrl || outputUrlValue(item);
             item.url = uploadedUrl;
-            item.kind = 'video';
+            item.kind = kind;
             return true;
         }
     }
@@ -2752,14 +2768,15 @@ function applyTempShUrlToCanvasRef(ref, uploadedUrl){
         if(item && typeof item === 'object'){
             item.originalLocalUrl = item.originalLocalUrl || outputUrlValue(item);
             item.url = uploadedUrl;
-            item.kind = 'video';
+            item.kind = kind;
             return true;
         }
     }
     return false;
 }
-async function uploadCanvasVideoRefToCloud(node, ref){
-    if(!ref?.url) throw new Error('没有可上传的视频');
+async function uploadCanvasMediaRefToCloud(node, ref){
+    const kind = mediaKindForRef(ref);
+    if(!ref?.url) throw new Error('没有可上传的媒体');
     if(/^https?:\/\//i.test(ref.url)) return ref.url;
     const response = await fetch('/api/cloud-video/upload', {
         method:'POST',
@@ -2772,7 +2789,7 @@ async function uploadCanvasVideoRefToCloud(node, ref){
     if(!uploadedUrl) throw new Error('云端没有返回链接');
     node.tempShLinks = [
         ...(node.tempShLinks || []).filter(item => item?.source !== ref.url),
-        {source:ref.url, url:uploadedUrl, expires:data.expires || '3 days'}
+        {source:ref.url, url:uploadedUrl, expires:data.expires || '3 days', kind}
     ];
     applyTempShUrlToCanvasRef(ref, uploadedUrl);
     return uploadedUrl;
@@ -2780,10 +2797,11 @@ async function uploadCanvasVideoRefToCloud(node, ref){
 async function uploadCanvasVideosToCloud(nodeId){
     const node = nodes.find(n => n.id === nodeId);
     if(!node) return [];
-    const refs = videoRefsOnly(orderedSources(node, generatorSources(node)).flatMap(src => src.refs || []));
-    const localRefs = refs.filter(ref => ref?.url && !/^https?:\/\//i.test(ref.url));
+    const refs = orderedSources(node, generatorSources(node)).flatMap(src => src.refs || [])
+        .filter(ref => ref?.url && ['image','video'].includes(mediaKindForRef(ref)));
+    const localRefs = refs.filter(ref => ref?.url && !isRemoteVideoReferenceUrl(ref.url));
     if(!localRefs.length){
-        showErrorModal('没有需要上传的本地视频', '上传云端');
+        showErrorModal('没有需要上传的本地图片或视频', '上传云端');
         return [];
     }
     node.tempShUploading = true;
@@ -2791,13 +2809,13 @@ async function uploadCanvasVideosToCloud(nodeId){
     try {
         const urls = [];
         for(const ref of localRefs){
-            urls.push(await uploadCanvasVideoRefToCloud(node, ref));
+            urls.push(await uploadCanvasMediaRefToCloud(node, ref));
         }
         node.tempShUploading = false;
         refreshNodes([node.id, ...localRefs.map(ref => ref.nodeId).filter(Boolean)]);
         scheduleSave();
         await copyTextToClipboard(urls[0]);
-        showErrorModal(`已上传 ${urls.length} 个视频到云端，首个链接已复制。链接约 3 天有效。`, '上传云端');
+        showErrorModal(`已上传 ${urls.length} 个媒体文件到云端，首个链接已复制。链接约 3 天有效。`, '上传云端');
         return urls;
     } catch(e) {
         node.tempShUploading = false;
@@ -2813,21 +2831,23 @@ function applyManualVideoUrlToCanvasRef(node, ref, manualUrl){
 async function setCanvasManualVideoUrl(nodeId){
     const node = nodes.find(n => n.id === nodeId);
     if(!node) return '';
-    const refs = videoRefsOnly(orderedSources(node, generatorSources(node)).flatMap(src => src.refs || []));
+    const refs = orderedSources(node, generatorSources(node)).flatMap(src => src.refs || [])
+        .filter(ref => ref?.url && ['image','video'].includes(mediaKindForRef(ref)));
     const firstLocal = refs.find(ref => ref?.url && !isRemoteVideoReferenceUrl(ref.url));
     const firstAny = firstLocal || refs[0] || null;
-    const current = manualVideoUrlForNode(node) || (firstAny ? tempShUploadedUrlForNode(node, firstAny.url) : '');
-    const value = prompt('输入视频网址 / 火山素材 URI', isRemoteVideoReferenceUrl(current) ? current : '');
+    const current = manualVideoUrlForNode(node) || currentCanvasMediaLinks(node)[0] || (firstAny ? tempShUploadedUrlForNode(node, firstAny.url) : '');
+    const value = prompt('输入媒体网址 / 火山素材 URI', isRemoteVideoReferenceUrl(current) ? current : '');
+    if(value === null) return '';
     const url = String(value || '').trim();
     if(!url){
         clearManualVideoUrlForNode(node);
         refreshNodes([node.id]);
         scheduleSave();
-        showErrorModal('已清除视频网址。', '输入网址');
+        showErrorModal('已清除手动网址。', '输入网址');
         return '';
     }
     if(!isRemoteVideoReferenceUrl(url)){
-        showErrorModal('请输入 http/https 视频网址或 asset:// 火山素材 URI', '输入网址');
+        showErrorModal('请输入 http/https 媒体网址或 asset:// 火山素材 URI', '输入网址');
         return '';
     }
     applyManualVideoUrlToCanvasRef(node, firstAny, url);
@@ -7569,8 +7589,8 @@ async function runVideoNode(nodeId, opts={}){
     const sources = orderedSources(node, generatorSources(node));
     const prompt = sources.map(s => s.prompt).filter(Boolean).join('\n\n');
     const allRefs = sources.flatMap(s => s.refs || []);
-    const refs = imageRefsOnly(allRefs);
-    const videoRefs = videoRefsOnly(allRefs);
+    const refs = applyUploadedUrlToRefs(imageRefsOnly(allRefs), node);
+    const videoRefs = applyUploadedUrlToRefs(videoRefsOnly(allRefs), node);
     if(node.useFrameRoles && refs[0]) refs[0] = {...refs[0], role:'first_frame'};
     if(node.useFrameRoles && refs[1]) refs[1] = {...refs[1], role:'last_frame'};
     if(!prompt){ alert(tr('canvas.videoNeedsPrompt')); return; }

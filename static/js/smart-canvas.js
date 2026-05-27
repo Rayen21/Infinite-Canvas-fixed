@@ -1760,8 +1760,23 @@ function tempShUploadedUrlFor(url){
     const match = (settings.videoTempShLinks || []).find(item => item?.source === url && item?.url);
     return match?.url || url;
 }
+function applyUploadedUrlsToSmartRefs(refs){
+    return (refs || []).map(ref => {
+        if(!ref?.url) return ref;
+        const url = tempShUploadedUrlFor(ref.url);
+        return url && url !== ref.url ? {...ref, url, originalLocalUrl:ref.originalLocalUrl || ref.url} : ref;
+    });
+}
 function manualSmartVideoLink(){
     return (settings.videoTempShLinks || []).find(item => item?.manual === true && item?.url) || null;
+}
+function currentSmartMediaLinks(){
+    const request = buildPromptRequest(activeSettingsSubject(), null, true, smartLoopContext);
+    const refs = (request.refs || []).filter(ref => ref?.url && ['image','video'].includes(mediaKindForItem(ref)));
+    return refs.map(ref => {
+        const uploaded = tempShUploadedUrlFor(ref.url);
+        return uploaded && uploaded !== ref.url ? uploaded : '';
+    }).filter(Boolean);
 }
 function clearManualSmartVideoUrl(){
     settings.videoTempShLinks = (settings.videoTempShLinks || []).filter(item => item?.manual !== true);
@@ -1776,12 +1791,13 @@ function applyTempShUrlToSmartRef(ref, uploadedUrl){
         url:uploadedUrl,
         tempShUrl:uploadedUrl,
         originalLocalUrl:node.images[index].originalLocalUrl || ref.url,
-        kind:'video'
+        kind:mediaKindForItem(ref)
     };
     return true;
 }
-async function uploadVideoRefToCloud(ref){
-    if(!ref?.url) throw new Error('没有可上传的视频');
+async function uploadMediaRefToCloud(ref){
+    const kind = mediaKindForItem(ref);
+    if(!ref?.url) throw new Error('没有可上传的媒体');
     if(/^https?:\/\//i.test(ref.url)) return ref.url;
     const response = await fetch('/api/cloud-video/upload', {
         method:'POST',
@@ -1794,7 +1810,7 @@ async function uploadVideoRefToCloud(ref){
     if(!uploadedUrl) throw new Error('云端没有返回链接');
     settings.videoTempShLinks = [
         ...(settings.videoTempShLinks || []).filter(item => item?.source !== ref.url),
-        {source:ref.url, url:uploadedUrl, expires:data.expires || '3 days'}
+        {source:ref.url, url:uploadedUrl, expires:data.expires || '3 days', kind}
     ];
     applyTempShUrlToSmartRef(ref, uploadedUrl);
     return uploadedUrl;
@@ -1811,27 +1827,29 @@ async function setCurrentSmartManualVideoUrl(){
     if(!node) return '';
     savePromptDraftForCurrent();
     const request = buildPromptRequest(node, null, true, smartLoopContext);
-    const refs = videoRefsOnly(request.refs || []);
+    const refs = (request.refs || []).filter(ref => ref?.url && ['image','video'].includes(mediaKindForItem(ref)));
     const firstLocal = refs.find(ref => ref?.url && !isRemoteVideoReferenceUrl(ref.url));
     const firstAny = firstLocal || refs[0] || null;
     const manual = manualSmartVideoLink();
-    const current = manual?.url || (firstAny ? tempShUploadedUrlFor(firstAny.url) : '');
+    const current = manual?.url || currentSmartMediaLinks()[0] || (firstAny ? tempShUploadedUrlFor(firstAny.url) : '');
     const value = await openAssetNameDialog({
-        title:'输入视频网址 / 火山素材 URI',
+        title:'输入媒体网址 / 火山素材 URI',
         value:isRemoteVideoReferenceUrl(current) ? current : '',
-        placeholder:'https://example.com/video.mp4 或 asset://asset-xxx'
+        placeholder:'https://example.com/media 或 asset://asset-xxx',
+        cancelValue:null
     });
+    if(value === null) return '';
     const url = String(value || '').trim();
     if(!url){
         clearManualSmartVideoUrl();
         persistActiveSmartSettings();
         scheduleSave();
         render();
-        toast('已清除视频网址');
+        toast('已清除手动网址');
         return '';
     }
     if(!isRemoteVideoReferenceUrl(url)){
-        toast('请输入 http/https 视频网址或 asset:// 火山素材 URI');
+        toast('请输入 http/https 媒体网址或 asset:// 火山素材 URI');
         return '';
     }
     applyManualVideoUrlToSmartRef(firstAny, url);
@@ -1846,24 +1864,24 @@ async function uploadCurrentSmartVideosToCloud(){
     if(!node) return [];
     savePromptDraftForCurrent();
     const request = buildPromptRequest(node, null, true, smartLoopContext);
-    const refs = videoRefsOnly(request.refs || []);
-    const localRefs = refs.filter(ref => ref?.url && !/^https?:\/\//i.test(ref.url));
+    const refs = (request.refs || []).filter(ref => ref?.url && ['image','video'].includes(mediaKindForItem(ref)));
+    const localRefs = refs.filter(ref => ref?.url && !isRemoteVideoReferenceUrl(ref.url));
     if(!localRefs.length){
-        toast('没有需要上传的本地视频');
+        toast('没有需要上传的本地图片或视频');
         return [];
     }
     const btn = inputThumbsRow?.querySelector('[data-temp-sh-upload-video]');
     if(btn) btn.disabled = true;
-    toast(`正在上传 ${localRefs.length} 个视频到云端...`);
+    toast(`正在上传 ${localRefs.length} 个媒体文件到云端...`);
     try {
         const urls = [];
         for(const ref of localRefs){
-            urls.push(await uploadVideoRefToCloud(ref));
+            urls.push(await uploadMediaRefToCloud(ref));
         }
         persistActiveSmartSettings();
         scheduleSave();
         render();
-        toast(`云端上传完成：${urls.length} 个视频`);
+        toast(`云端上传完成：${urls.length} 个媒体文件`);
         return urls;
     } finally {
         if(btn) btn.disabled = false;
@@ -2405,7 +2423,7 @@ function renderAssetLibrary(){
     bindAssetItemEvents();
     refreshIcons();
 }
-function openAssetNameDialog({title='', value='', placeholder='' }={}){
+function openAssetNameDialog({title='', value='', placeholder='', cancelValue='' }={}){
     return new Promise(resolve => {
         assetDialogTitle.textContent = title || tr('smart.assetRename');
         assetDialogInput.value = value || '';
@@ -2422,13 +2440,13 @@ function openAssetNameDialog({title='', value='', placeholder='' }={}){
             resolve(result);
         };
         assetDialogOk.onclick = () => cleanup(assetDialogInput.value.trim());
-        assetDialogCancel.onclick = () => cleanup('');
+        assetDialogCancel.onclick = () => cleanup(cancelValue);
         assetDialogInput.onkeydown = event => {
             if(event.key === 'Enter') cleanup(assetDialogInput.value.trim());
-            if(event.key === 'Escape') cleanup('');
+            if(event.key === 'Escape') cleanup(cancelValue);
         };
         assetDialogBackdrop.onmousedown = event => {
-            if(event.target === assetDialogBackdrop) cleanup('');
+            if(event.target === assetDialogBackdrop) cleanup(cancelValue);
         };
     });
 }
@@ -7834,7 +7852,8 @@ async function runRunningHubGeneration(prompt, refs){
 }
 async function runApiVideoGeneration(prompt, refs){
     if(!settings.videoModel) throw new Error(tr('smart.errNoVideoModel'));
-    const refImages = imageRefsOnly(refs).map((ref, i) => {
+    const uploadedRefs = applyUploadedUrlsToSmartRefs(refs);
+    const refImages = imageRefsOnly(uploadedRefs).map((ref, i) => {
         const item = {url:ref.url, name:ref.name || `图${i + 1}`};
         if(settings.videoUseFrameRoles){
             if(i === 0) item.role = 'first_frame';
@@ -7843,7 +7862,7 @@ async function runApiVideoGeneration(prompt, refs){
         return item;
     });
     const manualVideo = manualSmartVideoLink()?.url || '';
-    let refVideos = manualVideo ? [manualVideo] : videoRefsOnly(refs).map(ref => tempShUploadedUrlFor(ref.url));
+    let refVideos = manualVideo ? [manualVideo] : videoRefsOnly(uploadedRefs).map(ref => ref.url);
     const payload = {
         prompt,
         provider_id: settings.videoProvider || 'comfly',

@@ -2622,6 +2622,10 @@ def volcengine_video_resolution(value: str) -> str:
     text = aliases.get(text, text)
     return text if text in {"480p", "720p", "1080p"} else ""
 
+def is_volcengine_seedance2_model(model: str) -> bool:
+    value = str(model or "").strip().lower().replace("_", "-").replace(".", "-")
+    return "seedance-2-0" in value
+
 async def video_reference_to_frame_data_urls(value, max_frames=6, max_size=768):
     if not isinstance(value, str) or not value:
         return []
@@ -2790,6 +2794,15 @@ def apimart_video_duration(duration) -> int:
     except Exception:
         value = 5
     return max(4, min(15, value))
+
+def apimart_veo31_duration(duration) -> int:
+    try:
+        value = int(duration)
+    except Exception:
+        value = 8
+    # APIMart VEO 3.1 currently accepts a narrower duration window than
+    # the generic UI. Clamp instead of silently forcing every request to 8s.
+    return max(4, min(8, value))
 
 def is_apimart_veo31_model(model: str) -> bool:
     return str(model or "").strip().lower().startswith("veo3.1")
@@ -3006,25 +3019,28 @@ async def upload_video_for_apimart(client, provider, ref_url: str) -> str:
             print(f"APIMart 视频上传异常: {last_error}")
     return f"ERR:APIMart 未提供可用的视频文件上传入口（{last_error}）。请配置 PUBLIC_BASE_URL，或使用公网 http/https / asset:// 视频地址。"
 
-def local_video_path_for_cloud_upload(ref_url: str) -> str:
+def local_media_path_for_cloud_upload(ref_url: str, allowed_prefixes=("image/", "video/")) -> str:
     ref_url = str(ref_url or "").strip()
     if not ref_url:
-        raise HTTPException(status_code=400, detail="没有可上传的视频")
+        raise HTTPException(status_code=400, detail="没有可上传的媒体文件")
     if ref_url.startswith("http://") or ref_url.startswith("https://"):
         return ""
     if not (ref_url.startswith("/output/") or ref_url.startswith("/assets/")):
-        raise HTTPException(status_code=400, detail="云端上传只支持画布里的本地视频文件")
+        raise HTTPException(status_code=400, detail="云端上传只支持画布里的本地图片或视频文件")
     path = output_file_from_url(ref_url)
     if not path:
-        raise HTTPException(status_code=404, detail="本地视频不存在或已被删除")
+        raise HTTPException(status_code=404, detail="本地媒体文件不存在或已被删除")
     ct = content_type_for_path(path)
-    if not ct.startswith("video/"):
-        raise HTTPException(status_code=400, detail="请选择视频文件再上传云端")
+    if not any(ct.startswith(prefix) for prefix in allowed_prefixes):
+        raise HTTPException(status_code=400, detail="请选择图片或视频文件再上传云端")
     max_bytes = int(os.getenv("TEMP_SH_MAX_BYTES", str(4 * 1024 * 1024 * 1024)))
     size = os.path.getsize(path)
     if size > max_bytes:
-        raise HTTPException(status_code=400, detail=f"视频超过云端上传大小限制：{size} bytes")
+        raise HTTPException(status_code=400, detail=f"媒体文件超过云端上传大小限制：{size} bytes")
     return path
+
+def local_video_path_for_cloud_upload(ref_url: str) -> str:
+    return local_media_path_for_cloud_upload(ref_url, ("video/",))
 
 async def upload_video_to_litterbox(path: str, source_url: str) -> Dict[str, str]:
     upload_url = os.getenv("LITTERBOX_UPLOAD_URL", "https://litterbox.catbox.moe/resources/internals/api.php").strip() or "https://litterbox.catbox.moe/resources/internals/api.php"
@@ -3070,7 +3086,7 @@ async def upload_local_video_to_cloud(ref_url: str, service: str = "auto") -> Di
     ref_url = str(ref_url or "").strip()
     if ref_url.startswith("http://") or ref_url.startswith("https://"):
         return {"url": ref_url, "source": ref_url, "service": "existing"}
-    path = local_video_path_for_cloud_upload(ref_url)
+    path = local_media_path_for_cloud_upload(ref_url)
     service = str(service or os.getenv("CLOUD_VIDEO_UPLOAD_SERVICE", "auto") or "auto").strip().lower()
     if service in {"litterbox", "catbox"}:
         return await upload_video_to_litterbox(path, ref_url)
@@ -4986,7 +5002,7 @@ async def canvas_video(payload: CanvasVideoRequest):
                     body = {
                         "prompt": payload.prompt,
                         "model": model,
-                        "duration": 8,
+                        "duration": apimart_veo31_duration(payload.duration),
                         "aspect_ratio": apimart_veo31_aspect(payload.aspect_ratio),
                         "resolution": apimart_veo31_resolution(payload.resolution),
                     }
@@ -5027,16 +5043,19 @@ async def canvas_video(payload: CanvasVideoRequest):
                 # 非 APIMart：data URL 方式（OpenAI / ComflyAI 接口）
                 if is_volcengine:
                     text = str(payload.prompt or "").strip()
+                    volc_model = selected_model(payload.model, "doubao-seedance-2-0-fast-260128")
+                    has_reference_media = any(ref.url for ref in payload.images) or any(str(url or "").strip() for url in (payload.videos or []))
                     body = {
-                        "model": selected_model(payload.model, "doubao-seedance-2-0-fast-260128"),
+                        "model": volc_model,
                         "content": [
                             {
                                 "type": "text",
                                 "text": text,
                             }
                         ],
-                        "duration": volcengine_video_duration(payload.duration),
                     }
+                    if not (has_reference_media and is_volcengine_seedance2_model(volc_model)):
+                        body["duration"] = volcengine_video_duration(payload.duration)
                     if payload.aspect_ratio:
                         body["ratio"] = payload.aspect_ratio
                     resolution = volcengine_video_resolution(payload.resolution)
@@ -5155,8 +5174,9 @@ async def canvas_video(payload: CanvasVideoRequest):
         if "text.duration" in text or "specified duration is not supported" in text:
             hint = (
                 f"上游「{provider_name}」模型「{requested_model}」不支持当前时长参数。\n\n"
-                f"我方已改为不主动给火山 Seedance fast 传 duration；如果仍报这个错误，请把视频时长先切回默认值再试，"
-                f"或改用该账号已开通的其他视频模型。"
+                f"不同视频模型支持的时长不一样；如果选择了模型不支持的时长，上游可能报错，"
+                f"也可能自动按平台默认时长生成，例如 5 秒。\n\n"
+                f"请把视频时长切回该模型支持的值，或改用支持更长时长的视频模型。"
             )
             raise HTTPException(status_code=exc.response.status_code, detail=hint) from exc
         if "inputimagesensitivecontentdetected" in text.lower() or "privacyinformation" in text.lower() or "may contain real person" in text.lower():
