@@ -1,26 +1,26 @@
 {
-  "version": "2026.06.29",
-  "updated_at": "2026-06-30T20:36:36+08:00",
+  "version": "2026.07.04",
+  "updated_at": "2026-07-04T07:20:36+08:00",
   "items": [
     {
       "type": "feature",
-      "text": "新增 OpenAI Codex CLI 平台"
+      "text": "重要更新："
     },
     {
       "type": "feature",
-      "text": "图片编辑新增缩放原图"
+      "text": "针对笔记本等小屏幕，将所有页面做了缩放适配，显示不再拥挤"
     },
     {
       "type": "feature",
-      "text": "Alt 复制支持保留连线"
-    },
-    {
-      "type": "update",
-      "text": "图片节点标题可显示改名"
+      "text": "新增了触屏支持（理论上可以用iPad操控画布了）"
     },
     {
       "type": "feature",
-      "text": "生成完成新增提示音"
+      "text": "推荐API新增稳定出图平台，支持GPT Image 2稳定输出2K/4K"
+    },
+    {
+      "type": "feature",
+      "text": "CLI文件夹新增Gemini的支持（普通版本的pro账号无法登录，似乎是需要专业账号）"
     }
   ]
 }

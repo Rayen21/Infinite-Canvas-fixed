@@ -4,6 +4,16 @@
 * { box-sizing:border-box; }
 body { margin:0; height:100vh; overflow:hidden; background:var(--page); color:var(--text); font-family:'Inter',-apple-system,sans-serif; -webkit-font-smoothing:antialiased; }
 .shell { position:relative; height:100vh; overflow:hidden; }
+html[data-studio-scale="off"].studio-scale-managed .topbar,
+html[data-studio-scale="off"].studio-scale-managed .library,
+html[data-studio-scale="off"].studio-scale-managed .workflow-transfer-panel,
+html[data-studio-scale="off"].studio-scale-managed .canvas-meta-pop,
+html[data-studio-scale="off"].studio-scale-managed .gate-screen,
+html[data-studio-scale="off"].studio-scale-managed .image-edit-modal,
+html[data-studio-scale="off"].studio-scale-managed .log-panel,
+html[data-studio-scale="off"].studio-scale-managed .asset-manager-panel {
+    zoom: var(--studio-ui-scale, 1);
+}
 .topbar { position:absolute; top:22px; left:24px; right:24px; z-index:30; display:flex; align-items:flex-start; justify-content:space-between; pointer-events:none; }
 .panel { pointer-events:auto; background:var(--panel); border:1px solid var(--line); border-radius:24px; box-shadow:0 16px 44px var(--shadow); backdrop-filter:blur(16px); }
 .library { width:310px; max-height:calc(100vh - 44px); padding:14px; display:flex; flex-direction:column; gap:12px; }
@@ -1273,4 +1283,84 @@ body.studio-theme-dark .comfy-random-btn.active,
     .asset-manager-body { grid-template-columns:1fr; overflow:auto; }
     .asset-manager-side,.asset-manager-main { overflow:visible; }
     .canvas-asset-panel { right:14px; top:66px; bottom:90px; }
+}
+html[data-studio-scale="off"].studio-scale-managed .toolbar.scale-expanded {
+    width:auto;
+    max-width:min(760px, calc(100vw - 48px));
+    align-self:auto;
+    padding:6px;
+    gap:6px;
+    border-radius:18px;
+}
+html[data-studio-scale="off"].studio-scale-managed .toolbar.scale-expanded .toolbar-toggle {
+    display:none;
+}
+html[data-studio-scale="off"].studio-scale-managed .toolbar.scale-expanded .toolbar-items {
+    display:flex;
+    flex:1 1 auto;
+    gap:8px;
+    overflow-x:auto;
+}
+html[data-studio-scale="off"].studio-scale-managed .toolbar.scale-expanded .toolbar-fixed {
+    display:flex;
+    flex:0 0 auto;
+    gap:6px;
+    padding-left:0;
+    border-left:0;
+}
+html[data-studio-scale="off"].studio-scale-managed .toolbar.scale-expanded .toolbar-log,
+html[data-studio-scale="off"].studio-scale-managed .toolbar.scale-expanded .toolbar-asset,
+html[data-studio-scale="off"].studio-scale-managed .toolbar.scale-expanded .toolbar-workflow {
+    width:auto;
+    min-width:38px;
+    height:38px;
+    padding:0 12px;
+    border-radius:999px;
+}
+html[data-studio-scale="off"].studio-scale-managed .toolbar.scale-expanded .toolbar-fixed .tool-btn span {
+    display:inline;
+}
+@media (max-width:1320px), (max-height:860px) {
+    html[data-studio-scale="off"].studio-scale-managed .toolbar,
+    html[data-studio-scale="off"].studio-scale-managed .toolbar.collapsed,
+    html[data-studio-scale="off"].studio-scale-managed .toolbar.scale-expanded {
+        width:auto;
+        max-width:100%;
+        align-self:auto;
+        padding:6px;
+        gap:6px;
+        border-radius:18px;
+    }
+    html[data-studio-scale="off"].studio-scale-managed .toolbar .toolbar-toggle {
+        display:none !important;
+    }
+    html[data-studio-scale="off"].studio-scale-managed .toolbar .toolbar-items,
+    html[data-studio-scale="off"].studio-scale-managed .toolbar.collapsed .toolbar-items,
+    html[data-studio-scale="off"].studio-scale-managed .toolbar .toolbar-fixed,
+    html[data-studio-scale="off"].studio-scale-managed .toolbar.collapsed .toolbar-fixed {
+        display:flex !important;
+    }
+    html[data-studio-scale="off"].studio-scale-managed .toolbar .toolbar-items {
+        flex:1 1 auto;
+        gap:8px;
+        overflow-x:auto;
+    }
+    html[data-studio-scale="off"].studio-scale-managed .toolbar .toolbar-fixed {
+        flex:0 0 auto;
+        gap:6px;
+        padding-left:0;
+        border-left:0;
+    }
+    html[data-studio-scale="off"].studio-scale-managed .toolbar .toolbar-log,
+    html[data-studio-scale="off"].studio-scale-managed .toolbar .toolbar-asset,
+    html[data-studio-scale="off"].studio-scale-managed .toolbar .toolbar-workflow {
+        width:auto;
+        min-width:38px;
+        height:38px;
+        padding:0 12px;
+        border-radius:999px;
+    }
+    html[data-studio-scale="off"].studio-scale-managed .toolbar .toolbar-fixed .tool-btn span {
+        display:inline;
+    }
 }

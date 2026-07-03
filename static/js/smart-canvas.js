@@ -736,16 +736,28 @@ function smartWorkflowFilename(ext='json'){
     const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
     return `${safe}-workflow-${stamp}.${ext}`;
 }
+function clearSmartNodeTransientRunState(node, options={}){
+    if(!node) return node;
+    node.running = false;
+    node.pending = 0;
+    node.queued = false;
+    delete node.jimengPending;
+    delete node.pendingTasks;
+    delete node._runMetaTargetId;
+    if(options.clearRunHistory){
+        delete node.runStartedAt;
+        delete node.runFinishedAt;
+        delete node.runElapsedMs;
+        delete node.runTimerHidden;
+    }
+    return node;
+}
 function serializableSmartNode(node){
     const base = JSON.parse(JSON.stringify(node || {}));
     const copy = normalizeLegacySmartNode(base) || {};
     if(Array.isArray(copy.images)) copy.images = copy.images.map(img => mediaItemForStorage(stripImageGenerationMeta(img))).filter(Boolean);
     if(copy.runSettings) copy.runSettings = settingsForStorage(copy.runSettings);
-    copy.running = false;
-    copy.pending = 0;
-    copy.queued = false;
-    copy.jimengPending = null;
-    delete copy.pendingTasks;
+    clearSmartNodeTransientRunState(copy);
     delete copy._dom;
     return copy;
 }
@@ -5830,13 +5842,8 @@ function cloneSmartNode(node, dx=0, dy=0){
     );
     copy.x = (Number(node.x) || 0) + dx;
     copy.y = (Number(node.y) || 0) + dy;
-    copy.running = false;
-    copy.pending = 0;
+    clearSmartNodeTransientRunState(copy, {clearRunHistory:true});
     if(copy.type === 'smart-group') copy.title = copy.title || '智能分组';
-    delete copy.runStartedAt;
-    delete copy.runFinishedAt;
-    delete copy.runElapsedMs;
-    delete copy.runTimerHidden;
     return copy;
 }
 function copySelectedNodes(){
@@ -5950,7 +5957,7 @@ function duplicateForAltDrag(node, preserveConnections=false){
     if(preserveConnections){
         const idSet = new Set(sourceNodes.map(n => n.id));
         const newConnections = (canvas.connections || [])
-            .filter(conn => idSet.has(conn.from) || idSet.has(conn.to))
+            .filter(conn => idSet.has(conn.to))
             .map(conn => ({...conn, from:idMap.get(conn.from) || conn.from, to:idMap.get(conn.to) || conn.to}))
             .filter(conn => conn.from && conn.to && conn.from !== conn.to);
         const nextConnections = [...(canvas.connections || [])];

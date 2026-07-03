@@ -232,6 +232,7 @@ window.addEventListener('studio-lang-change', () => {
     renderCanvasList();
     render();
 });
+window.addEventListener('studio-ui-scale-change', applyQuickToolbarState);
 const shell = document.getElementById('shell');
 const canvasGate = document.getElementById('canvasGate');
 const board = document.getElementById('board');
@@ -570,7 +571,10 @@ function applyTheme(theme){
 function applyQuickToolbarState(){
     const toolbar = document.getElementById('quickToolbar');
     if(!toolbar) return;
-    const collapsed = localStorage.getItem(QUICK_TOOLBAR_COLLAPSED_KEY) === '1';
+    const uiScale = Number(getComputedStyle(document.documentElement).getPropertyValue('--studio-ui-scale')) || 1;
+    const isScaledUi = uiScale < 0.995;
+    const collapsed = !isScaledUi && localStorage.getItem(QUICK_TOOLBAR_COLLAPSED_KEY) === '1';
+    toolbar.classList.toggle('scale-expanded', isScaledUi);
     toolbar.classList.toggle('collapsed', collapsed);
     const btn = toolbar.querySelector('.toolbar-toggle');
     if(btn){
@@ -13249,7 +13253,7 @@ function duplicateNodesForAltDrag(node, preserveConnections=false){
     }
     if(preserveConnections){
         const copiedConnections = (connections || [])
-            .filter(conn => sourceIds.has(conn.from) || sourceIds.has(conn.to))
+            .filter(conn => sourceIds.has(conn.to))
             .map(conn => ({
                 ...conn,
                 id:uid('c'),
